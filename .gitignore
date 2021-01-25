@@ -1,0 +1,35 @@
+.idea/
+node_modules/
+server_config.json
+remind
+logs/*
+fetchlog.sh
+serverLogs/
+public/webpack/
+*/.DS_Store
+*/nohup.out
+
+
+*/.DS_Store
+*/node_modules
+vue_prj/dist/
+
+
+# local env files
+vue_prj/.env.local
+vue_prj/.env.*.local
+
+# Log files
+vue_prj/npm-debug.log*
+vue_prj/yarn-debug.log*
+vue_prj/yarn-error.log*
+vue_prj/pnpm-debug.log*
+
+# Editor directories and files
+*/.idea
+*/.vscode
+*/*.suo
+*/*.ntvs*
+*/*.njsproj
+*/*.sln
+*/*.sw?
