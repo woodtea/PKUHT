@@ -1,7 +1,7 @@
 module.exports = {
     extractBasic: function(msg){
         return {
-            id: msg.id,
+            msg_id: msg.msg_id,
             operation: msg.operation,
             user: msg.user,
             user_id: msg.user_id,

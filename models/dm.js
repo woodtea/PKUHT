@@ -1,13 +1,10 @@
 
-const ogmneo = require('ogmneo');
 const neo4j = require('neo4j-driver')
 const con = require('./const')
 const utils = require('./utils')
 const driver = neo4j.driver('bolt://localhost:7687', neo4j.auth.basic('neo4j', con.DB_PASSWD))
 
 function DataManager() {
-    ogmneo.Connection.connect('neo4j', con.DB_PASSWD, con.DB_ADDRESS);
-    ogmneo.Connection.logCypherEnabled = true;
 }
 
 DataManager.prototype.initDatabase = async function (msg) {
@@ -160,12 +157,14 @@ DataManager.prototype.createRelationType = async function (msg) {
             throw new Error(`the relation type has already exists`);
         }
         cypher = `MATCH (p:Project {name: "${msg.project}"})\
-        CREATE (p) - [:has] -> (t:RType {name: "${msg.relation_type}"})`;
+        CREATE (p) - [:has] -> (t:RType {name: "${msg.relation_type}"}) `;
         let i = 0;
-        for(let role in msg.roles){
+        for(let [role,value] of Object.entries(msg.roles)){
+            let minvalue = typeof(value["min"])==undefined?value["min"]:1;
+            let maxvalue = typeof(value["max"])==undefined?value["max"]:1;
             cypher+=`WITH p,t\
-                     MATCH (p) - [:has] -> (et${i}:EType {name: "${msg.roles[role]}"})\
-                     CREATE (t) - [:has_role {name: "${role}"}] -> (et${i++})`
+                     MATCH (p) - [:has] -> (et${i}:EType {name: "${value["entity_type"]}"})\
+                     CREATE (t) - [:has_role {name: "${role}", min:${minvalue}, max:${maxvalue}}] -> (et${i++})`
         }
         cypher+='RETURN id(t) AS typeId'
         res=await session.run(cypher)
@@ -246,7 +245,11 @@ let getRelationTypes = async function(project,session){
             "roles":{}
         }
         for(let role of rt._fields[1]){
-            rt_obj["roles"][role[0].properties.name] = role[1].properties.name
+            rt_obj["roles"][role[0].properties.name] = {
+                "entity_type":role[1].properties.name,
+                "min": role[0].properties.min,
+                "max": role[0].properties.max,
+            }
         }
         rts[rt._fields[0].identity]=rt_obj
     }
@@ -263,8 +266,10 @@ let getEntities = async function(project,userid,session){
     let ens = {};
     for (let en of res.records){
         ens[en._fields[0].identity]={
-            "name":en._fields[0].properties.name,
             "type":en._fields[1]
+        }
+        for(let [key,value] of Object.entries(en._fields[0].properties)){
+            ens[en._fields[0].identity][key] = value
         }
     }
     return ens;
@@ -283,6 +288,9 @@ let getRelations = async function(project,userid,session){
         let rela_inst = {
             "type":rela._fields[1],
             "roles":{}
+        }
+        for(let [key,value] of Object.entries(rela._fields[0].properties)){
+            rela_inst[key] = value
         }
         for(let role of rela._fields[2]){
             rela_inst["roles"][role[0].type]=role[1].identity.toNumber()
@@ -309,6 +317,64 @@ DataManager.prototype.getGraph = async function(msg){
     return resp
 }
 
+DataManager.prototype.setNodeProperty = async function(msg){
+    var session = driver.session();
+    var resp = utils.extractBasic(msg);
+    try{
+        let cypher = `Match (n) where id(n)=${msg["node_id"]} `
+        for(let key in msg["properties"]){
+            cypher += `Set n.${key} = "${msg["properties"][key]}" `
+        }
+        await session.run(cypher)
+    }catch(err){
+        resp.error = true;
+        resp.msg = err;
+    }finally {
+        await session.close()
+    }
+    return resp;
+}
 
+DataManager.prototype.deleteEntity = async function(msg){
+    var session = driver.session();
+    var resp = utils.extractBasic(msg);
+    try{
+        let cypher = `Match (u:User) - [ref:refer] - (e:Entity)
+                      Where id(u)=${msg.user_id} and id(e)=${msg.entity_id}
+                      Optional Match (u:User) - [ref_r:relation] -> (r:relation) - [] -> (e:Entity) 
+                      Delete ref,ref_r
+                      Return ref,ref_r`
+        let res =  await session.run(cypher)
+        if(res.records.length==0) {
+            throw new Error(`refer to the entity not exists`);
+        }
+    }catch(err){
+        resp.error = true;
+        resp.msg = err;
+    }finally {
+        await session.close()
+    }
+    return resp
+}
 
+DataManager.prototype.deleteRelation = async function(msg){
+    var session = driver.session();
+    var resp = utils.extractBasic(msg);
+    try{
+        let cypher = `Match (u:User) - [ref:refer] - (r:Relation)
+                      Where id(u)=${msg.user_id} and id(r)=${msg.relation_id}
+                      Delete ref
+                      Return ref`
+        let res =  await session.run(cypher)
+        if(res.records.length==0) {
+            throw new Error(`refer to the relation not exists`);
+        }
+    }catch(err){
+        resp.error = true;
+        resp.msg = err;
+    }finally {
+        await session.close()
+    }
+    return resp
+}
 module.exports = DataManager;
